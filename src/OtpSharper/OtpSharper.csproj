@@ -10,7 +10,7 @@
 
     <!-- Package metadata -->
     <PackageId>OtpSharper</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.3</Version>
     <Authors>OtpSharp Contributors</Authors>
     <Description>.NET lib to geenrate TOTP AND HOTP fast and secure
     </Description>
