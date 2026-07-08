@@ -6,7 +6,7 @@ Full RFC 6238 (TOTP) and RFC 4226 (HOTP) compliance, Steam Guard support, multip
 
 Install :
 ```
-dotnet add package OtpSharper --version 1.0.0
+dotnet add package OtpSharper 
 ```
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
