@@ -108,14 +108,12 @@ public static class Base32
             if (ch >= 256 || lookup[ch] < 0)
                 throw new FormatException($"Invalid Base32 character '{ch}' at position {i}.");
 
-            buffer = (buffer << 5) | lookup[ch];
+            buffer = (buffer << 5) | (byte)lookup[ch];
             bitsLeft += 5;
 
-            if (bitsLeft >= 8)
-            {
-                bitsLeft -= 8;
-                result[outIdx++] = (byte)((buffer >> bitsLeft) & 0xFF);
-            }
+            if (bitsLeft < 8) continue;
+            bitsLeft -= 8;
+            result[outIdx++] = (byte)((buffer >> bitsLeft) & 0xFF);
         }
 
         return result;
