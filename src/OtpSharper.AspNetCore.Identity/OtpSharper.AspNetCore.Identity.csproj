@@ -5,16 +5,16 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Optimize>true</Optimize>
 
     <!-- Package metadata -->
-    <PackageId>OtpSharper</PackageId>
-    <Version>1.0.3</Version>
+    <PackageId>OtpSharper.AspNetCore.Identity</PackageId>
+    <Version>1.0.0</Version>
     <Authors>OtpSharp Contributors</Authors>
-    <Description>.NET lib to geenrate TOTP AND HOTP fast and secure
+    <Description>ASP.NET Core Identity two-factor token provider backed by OtpSharper — drop-in
+      replacement for Identity's built-in authenticator provider with configurable algorithm,
+      digit count, and optional replay protection.
     </Description>
-    <PackageTags>totp;hotp;otp;2fa;mfa;authenticator;rfc6238;rfc4226</PackageTags>
+    <PackageTags>totp;2fa;mfa;identity;aspnetcore;authenticator</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
@@ -22,8 +22,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
-    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="Microsoft.Extensions.Identity.Core" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OtpSharper\OtpSharper.csproj" />
   </ItemGroup>
 
 </Project>

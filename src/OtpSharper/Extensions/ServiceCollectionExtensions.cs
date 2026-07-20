@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using OtpSharper.Abstractions;
 using OtpSharper.Core;
+using OtpSharper.OutOfBand;
 using OtpSharper.Totp;
 using OtpSharper.Uri;
 
@@ -76,13 +78,32 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="UsedCodeTracker"/> as a singleton for replay attack prevention.
+    /// Registers <see cref="UsedCodeTracker"/> as a singleton for replay attack prevention,
+    /// also exposed as <see cref="IUsedCodeStore"/> so it's swappable for a distributed
+    /// implementation (e.g. <c>RedisUsedCodeStore</c>) without changing consuming code.
     /// </summary>
     public static IServiceCollection AddOtpUsedCodeTracker(
         this IServiceCollection services,
         TimeSpan? maxAge = null)
     {
-        services.AddSingleton(new UsedCodeTracker(maxAge));
+        var tracker = new UsedCodeTracker(maxAge);
+        services.AddSingleton(tracker);
+        services.AddSingleton<IUsedCodeStore>(tracker);
+        return services;
+    }
+
+    /// <summary>
+    /// Registers <see cref="OobCodeGenerator"/> for out-of-band (SMS/email) verification codes.
+    /// Uses <see cref="InMemoryOobCodeStore"/> unless an <see cref="IOobCodeStore"/> is already
+    /// registered — for multi-instance deployments, register the <c>OtpSharper.Redis</c> package's
+    /// <c>AddRedisOobCodeStore()</c> (or your own store) before calling this.
+    /// </summary>
+    public static IServiceCollection AddOobCodeGenerator(
+        this IServiceCollection services,
+        OobCodeOptions? options = null)
+    {
+        services.TryAddSingleton<IOobCodeStore, InMemoryOobCodeStore>();
+        services.AddSingleton(sp => new OobCodeGenerator(sp.GetRequiredService<IOobCodeStore>(), options));
         return services;
     }
 }

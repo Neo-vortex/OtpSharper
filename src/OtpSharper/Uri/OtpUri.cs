@@ -379,6 +379,15 @@ public sealed class OtpUri
     /// Returns a Google Charts QR code URL for this OTP URI.
     /// </summary>
     /// <param name="size">QR code image size in pixels.</param>
+    /// <remarks>
+    /// The Google Charts Image API this method builds a URL for was shut down in 2019
+    /// and no longer serves images — this URL will not render a QR code. Use
+    /// <see cref="OtpQrCode.ToQrCodePng"/>, <see cref="OtpQrCode.ToQrCodeSvg"/>, or
+    /// <see cref="OtpQrCode.ToQrCodeDataUri"/> instead, which render locally and don't
+    /// depend on any third-party service (or leak the secret-bearing URI to one).
+    /// </remarks>
+    [Obsolete("The Google Charts Image API was shut down in 2019; this URL no longer renders an image. " +
+        "Use OtpQrCode.ToQrCodePng, ToQrCodeSvg, or ToQrCodeDataUri instead.")]
     public string ToQrCodeImageUrl(int size = 300)
     {
         string encoded = HttpUtility.UrlEncode(ToUriString());

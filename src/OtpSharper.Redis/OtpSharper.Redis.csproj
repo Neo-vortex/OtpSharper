@@ -5,16 +5,16 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Optimize>true</Optimize>
 
     <!-- Package metadata -->
-    <PackageId>OtpSharper</PackageId>
-    <Version>1.0.3</Version>
+    <PackageId>OtpSharper.Redis</PackageId>
+    <Version>1.0.0</Version>
     <Authors>OtpSharp Contributors</Authors>
-    <Description>.NET lib to geenrate TOTP AND HOTP fast and secure
+    <Description>Redis-backed stores for OtpSharper — for out-of-band (SMS/email) codes today,
+      with HOTP counters and replay tracking planned. Use in any multi-instance deployment
+      where the in-memory stores aren't shared across processes.
     </Description>
-    <PackageTags>totp;hotp;otp;2fa;mfa;authenticator;rfc6238;rfc4226</PackageTags>
+    <PackageTags>totp;hotp;otp;2fa;mfa;redis;distributed</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Deterministic>true</Deterministic>
@@ -22,8 +22,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.8.24" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
-    <PackageReference Include="QRCoder" Version="1.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OtpSharper\OtpSharper.csproj" />
   </ItemGroup>
 
 </Project>

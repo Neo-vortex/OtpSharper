@@ -2,11 +2,17 @@
 
 **State-of-the-art TOTP/HOTP library for .NET 10.**
 
-Full RFC 6238 (TOTP) and RFC 4226 (HOTP) compliance, Steam Guard support, multiple HMAC algorithms, configurable validation windows, NTP drift correction, `otpauth://` URI support, brute-force backoff protection, and a rich fluent API — built for correctness, performance, and security.
+Full RFC 6238 (TOTP) and RFC 4226 (HOTP) compliance, Steam Guard support, multiple HMAC algorithms, configurable validation windows, NTP drift correction, `otpauth://` URI support with local QR code rendering, out-of-band (SMS/email) codes, brute-force backoff protection, ASP.NET Core Identity integration, optional Redis-backed distributed storage, and a rich fluent API — built for correctness, performance, and security.
 
 Install :
 ```
 dotnet add package OtpSharper 
+```
+
+Optional add-on packages:
+```
+dotnet add package OtpSharper.AspNetCore.Identity   # ASP.NET Core Identity two-factor provider
+dotnet add package OtpSharper.Redis                 # Redis-backed distributed stores
 ```
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
@@ -24,8 +30,12 @@ dotnet add package OtpSharper
 - [HOTP (Counter-Based)](#hotp-counter-based)
 - [Steam Guard](#steam-guard)
 - [otpauth:// URI](#otpauth-uri)
+- [QR Code Generation](#qr-code-generation)
+- [Out-of-Band (SMS / Email) Codes](#out-of-band-sms--email-codes)
+- [ASP.NET Core Identity Integration](#aspnet-core-identity-integration)
 - [Clock Drift Correction](#clock-drift-correction)
 - [Dependency Injection](#dependency-injection)
+- [Distributed Storage (Redis)](#distributed-storage-redis)
 - [Security & Hardening](#security--hardening)
 - [Project Structure](#project-structure)
 - [Benchmarks](#benchmarks)
@@ -47,11 +57,15 @@ dotnet add package OtpSharper
 | **Windows** | Asymmetric look-ahead / look-behind validation windows |
 | **Epoch** | Custom T0 epoch (RFC 6238 §4) |
 | **Clock sync** | NTP drift measurement + corrected time provider |
-| **URI** | `otpauth://` build, parse, QR code URL |
+| **URI** | `otpauth://` build, parse |
+| **QR codes** | Local PNG / SVG / data-URI rendering — no external service |
+| **Out-of-band codes** | Random, hashed, single-use codes for SMS/email delivery |
+| **ASP.NET Core Identity** | Drop-in `IUserTwoFactorTokenProvider` (separate package) |
 | **DI** | `IServiceCollection` extension methods |
 | **Security** | Constant-time comparison, pinned + zeroed secret memory |
 | **Backoff** | Thread-safe brute-force lockout with configurable policy |
 | **Secret strength** | Entropy estimation and minimum-strength enforcement |
+| **Distributed storage** | Redis-backed out-of-band code store (separate package) |
 
 ---
 
@@ -61,7 +75,14 @@ dotnet add package OtpSharper
 dotnet add package OtpSharper
 ```
 
-**Requirements:** .NET 10.0+
+Optional add-ons:
+
+```shell
+dotnet add package OtpSharper.AspNetCore.Identity   # ASP.NET Core Identity two-factor provider
+dotnet add package OtpSharper.Redis                 # Redis-backed IOobCodeStore
+```
+
+**Requirements:** .NET 10.0+. `OtpSharper` itself now also pulls in [QRCoder](https://github.com/codebude/QRCoder) for local QR rendering. `OtpSharper.AspNetCore.Identity` additionally requires `Microsoft.Extensions.Identity.Core`; `OtpSharper.Redis` requires `StackExchange.Redis`.
 
 ---
 
@@ -75,10 +96,10 @@ using OtpSharper;
 // Generate a new secret and configure TOTP for a user
 var manager = OtpManager.Create("alice@example.com", issuer: "MyApp");
 
-// Present to the user for scanning
-Console.WriteLine(manager.GetOtpAuthUri());   // otpauth://totp/...
-Console.WriteLine(manager.GetSetupKey());      // JBSWY3DPEHPK3PXP (Base32)
-Console.WriteLine(manager.GetQrCodeUrl());     // Google Charts QR URL
+# Present to the user for scanning
+Console.WriteLine(manager.GetOtpAuthUri());     // otpauth://totp/...
+Console.WriteLine(manager.GetSetupKey());        // JBSWY3DPEHPK3PXP (Base32)
+byte[] qrPng = manager.GetQrCodePng();           // render locally, no external service
 
 // Generate the current code
 var code = manager.Generate();
@@ -208,13 +229,78 @@ string str = uri.ToUriString();
 // Parse
 var parsed = OtpUri.Parse("otpauth://totp/Example:alice@google.com?secret=JBSWY3DPEHPK3PXP&issuer=Example");
 TotpGenerator totp = parsed.ToTotpGenerator();
-
-// QR Code URL
-string qrUrl = uri.ToQrCodeImageUrl(300);
-// => https://chart.googleapis.com/chart?chs=300x300&chld=M|0&cht=qr&chl=otpauth%3A%2F%2F...
 ```
 
 > **Note:** OtpSharper is the only .NET OTP library in this benchmark comparison that includes a built-in `otpauth://` URI parser.
+
+---
+
+## QR Code Generation
+
+```csharp
+using OtpSharper.Uri;
+
+var uri = OtpUri.ForTotp("alice@example.com", secret, options, issuer: "MyApp");
+
+byte[] png   = uri.ToQrCodePng(pixelsPerModule: 10);   // raw PNG bytes
+string svg   = uri.ToQrCodeSvg(pixelsPerModule: 10);   // inline SVG markup
+string dataUri = uri.ToQrCodeDataUri();                // "data:image/png;base64,..." for <img src="...">
+```
+
+All three render entirely locally via [QRCoder](https://github.com/codebude/QRCoder) — no network call, and the secret-bearing `otpauth://` URI never leaves the process. `OtpManager` exposes matching convenience methods (`GetQrCodePng`, `GetQrCodeSvg`, `GetQrCodeDataUri`).
+
+> **Migrating from `ToQrCodeImageUrl()` / `GetQrCodeUrl()`:** both are marked `[Obsolete]`. They built a URL against the Google Charts Image API, which was shut down in 2019 — the URL no longer renders an image. Switch to the methods above.
+
+---
+
+## Out-of-Band (SMS / Email) Codes
+
+Unlike TOTP/HOTP, out-of-band codes aren't derived from a shared secret — there's nothing for the server to compute and compare. Instead the server generates a random code, remembers only its SHA-256 hash (with a TTL and attempt limit) via `IOobCodeStore`, and hands you the plaintext once so you can send it through SMS or email. Validation consumes the code — one-time use, unlike a TOTP code which stays valid for its whole window.
+
+```csharp
+using OtpSharper.OutOfBand;
+
+var store     = new InMemoryOobCodeStore();   // or RedisOobCodeStore — see Distributed Storage
+var generator = new OobCodeGenerator(store, new OobCodeOptions
+{
+    Digits      = 6,
+    Ttl         = TimeSpan.FromMinutes(5),
+    MaxAttempts = 5,
+});
+
+string code = await generator.GenerateAsync("phone:+15551234567");
+// hand `code` to your SMS provider — it is not retrievable again
+
+var result = await generator.ValidateAsync("phone:+15551234567", userInput);
+if (result.IsValid)
+{
+    // proceed — the code has already been consumed and cannot be reused
+}
+```
+
+---
+
+## ASP.NET Core Identity Integration
+
+The `OtpSharper.AspNetCore.Identity` package provides an `IUserTwoFactorTokenProvider<TUser>` that plugs into Identity's existing enrollment flow (`GenerateNewAuthenticatorKey` / `ResetAuthenticatorKeyAsync`) — only the token provider registration changes. It adds configurable HMAC algorithm/digits and optional replay protection on top of what Identity's built-in `AuthenticatorTokenProvider` offers.
+
+```shell
+dotnet add package OtpSharper.AspNetCore.Identity
+```
+
+```csharp
+using OtpSharper.AspNetCore.Identity;
+
+services.AddIdentity<ApplicationUser, IdentityRole>()
+    .AddEntityFrameworkStores<AppDbContext>()
+    .AddOtpSharperTwoFactorTokenProvider<ApplicationUser>(options =>
+    {
+        options.TotpOptions   = TotpOptions.GoogleAuthenticator; // default; matches existing authenticator-app enrollments
+        options.ReplayTracker = new UsedCodeTracker();           // optional: reject an intercepted code replayed within the window
+    });
+```
+
+Call `UserManager.GenerateTwoFactorTokenAsync(user, "OtpSharper")` / `VerifyTwoFactorTokenAsync(user, "OtpSharper", code)` as usual, or pass `tokenProviderName: "Authenticator"` to `AddOtpSharperTwoFactorTokenProvider` to swap it in as a transparent replacement for Identity's built-in provider without changing any calling code.
 
 ---
 
@@ -251,12 +337,47 @@ services.AddTotp("JBSWY3DPEHPK3PXP", options =>
 // Or from a full otpauth:// URI
 services.AddOtpManager("otpauth://totp/App:user@example.com?secret=...");
 
+// Out-of-band (SMS/email) codes — in-memory store by default
+services.AddOobCodeGenerator(new OobCodeOptions { Digits = 6, Ttl = TimeSpan.FromMinutes(5) });
+
 // Inject
 public class AuthService(TotpGenerator totp)
 {
     public bool Verify(string code) => totp.Validate(code).IsValid;
 }
 ```
+
+---
+
+## Distributed Storage (Redis)
+
+The default `InMemoryOobCodeStore`, `InMemoryHotpCounterStore`, and `UsedCodeTracker` are all per-process — fine for a single instance, not shared across a multi-instance deployment. The `OtpSharper.Redis` package provides Redis-backed implementations of all three: `IOobCodeStore`, `IHotpCounterStore`, and `IUsedCodeStore` (a new interface `UsedCodeTracker` now implements, so it's swappable without touching calling code).
+
+```shell
+dotnet add package OtpSharper.Redis
+```
+
+```csharp
+using OtpSharper.Redis;
+using StackExchange.Redis;
+
+services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
+
+services.AddRedisOobCodeStore();       // registers IOobCodeStore backed by Redis
+services.AddOobCodeGenerator();        // picks up the Redis store instead of the in-memory default
+
+services.AddRedisHotpCounterStore();   // registers IHotpCounterStore backed by Redis
+
+services.AddRedisUsedCodeStore();      // registers IUsedCodeStore backed by Redis, for replay
+                                        // protection in OtpSharperTotpOptions.ReplayTracker
+                                        // (OtpSharper.AspNetCore.Identity) or your own code
+```
+
+- **`RedisOobCodeStore`** — each pending code is a Redis hash with a native `EXPIRE` matching its TTL, so Redis evicts stale entries on its own even if `RemoveAsync` is never called.
+- **`RedisHotpCounterStore`** — `SetCounterAsync`'s "only advance, never regress" contract is enforced with a small Lua script evaluated server-side, so the read-compare-write is atomic even with multiple instances racing to advance the same counter.
+- **`RedisUsedCodeStore`** — marks a (keyId, counter) pair used via `SET ... NX EX`, an atomic "first use" check with a built-in expiry, in one round trip.
+
+All three are covered by integration tests in `tests/OtpSharper.Redis.Tests` — they run against a real Redis instance (`docker run --rm -p 6379:6379 redis`, or set `OTPSHARPER_TEST_REDIS`) and no-op if none is reachable, rather than mocking StackExchange.Redis's surface.
 
 ---
 
@@ -301,7 +422,7 @@ OtpSecret secret = OtpSecretGenerator.GenerateForAlgorithm(OtpAlgorithm.HmacSha2
 
 ### Brute-Force Backoff
 
-Thread-safe in-memory lockout policy. For distributed deployments, replicate the same logic against a shared cache (e.g., Redis).
+Thread-safe in-memory lockout policy. `OtpSharper.Redis` doesn't cover `OtpBackoffPolicy` yet (it does cover HOTP counters and replay tracking — see [Distributed Storage](#distributed-storage-redis)); for distributed lockout today, replicate the same logic against a shared cache yourself.
 
 ```csharp
 var policy = new OtpBackoffPolicy(new OtpBackoffOptions
@@ -344,48 +465,70 @@ else
 ```
 OtpSharper/
 ├── src/
-│   └── OtpSharper/
-│       ├── Abstractions/
-│       │   ├── OtpBackoffPolicy.cs        # Brute-force lockout
-│       │   ├── TotpValidationService.cs   # High-level validation service
-│       │   └── UsedCodeTracker.cs         # Replay prevention tracker
-│       ├── Algorithms/
-│       │   ├── HmacProvider.cs            # HMAC-SHA1/256/384/512/SHA3 computation
-│       │   └── OtpAlgorithm.cs            # Algorithm enum
-│       ├── Core/
-│       │   ├── Base32.cs                  # RFC 4648 Base32 codec
-│       │   ├── DynamicTruncation.cs       # RFC 4226 §5.3 truncation + constant-time compare
-│       │   ├── OtpResults.cs              # OtpCode / OtpValidationResult types
-│       │   ├── OtpSecret.cs               # Pinned, zeroed secret container
-│       │   ├── OtpSecretGenerator.cs      # Key generation + entropy assessment
-│       │   └── TimeProvider.cs            # Abstracted time source
-│       ├── Extensions/
-│       │   └── ServiceCollectionExtensions.cs  # DI registration helpers
-│       ├── Hotp/
-│       │   ├── HotpCounterStore.cs        # IHotpCounterStore + in-memory impl
-│       │   ├── HotpGenerator.cs           # RFC 4226 HOTP generator + validator
-│       │   └── HotpOptions.cs             # HOTP configuration
-│       ├── Steam/
-│       │   └── SteamGuardGenerator.cs     # Steam Guard 5-char TOTP variant
-│       ├── Sync/
-│       │   └── ClockSync.cs               # NTP drift measurement + correction
-│       ├── Totp/
-│       │   ├── TotpGenerator.cs           # RFC 6238 TOTP generator + validator
-│       │   ├── TotpOptions.cs             # TOTP configuration + presets
-│       │   └── TotpOptionsBuilder.cs      # Fluent options builder
-│       ├── Uri/
-│       │   └── OtpUri.cs                  # otpauth:// builder, parser, QR URL
-│       ├── GlobalUsings.cs
-│       ├── OtpManager.cs                  # High-level enrollment + validation facade
-│       └── OtpSharper.csproj
+│   ├── OtpSharper/
+│   │   ├── Abstractions/
+│   │   │   ├── OtpBackoffPolicy.cs        # Brute-force lockout
+│   │   │   ├── TotpValidationService.cs   # High-level validation service
+│   │   │   └── UsedCodeTracker.cs         # Replay prevention tracker
+│   │   ├── Algorithms/
+│   │   │   ├── HmacProvider.cs            # HMAC-SHA1/256/384/512/SHA3 computation
+│   │   │   └── OtpAlgorithm.cs            # Algorithm enum
+│   │   ├── Core/
+│   │   │   ├── Base32.cs                  # RFC 4648 Base32 codec
+│   │   │   ├── DynamicTruncation.cs       # RFC 4226 §5.3 truncation + constant-time compare
+│   │   │   ├── OtpResults.cs              # OtpCode / OtpValidationResult types
+│   │   │   ├── OtpSecret.cs               # Pinned, zeroed secret container
+│   │   │   ├── OtpSecretGenerator.cs      # Key generation + entropy assessment
+│   │   │   └── TimeProvider.cs            # Abstracted time source
+│   │   ├── Extensions/
+│   │   │   └── ServiceCollectionExtensions.cs  # DI registration helpers
+│   │   ├── Hotp/
+│   │   │   ├── HotpCounterStore.cs        # IHotpCounterStore + in-memory impl
+│   │   │   ├── HotpGenerator.cs           # RFC 4226 HOTP generator + validator
+│   │   │   └── HotpOptions.cs             # HOTP configuration
+│   │   ├── OutOfBand/
+│   │   │   ├── IOobCodeStore.cs           # IOobCodeStore + in-memory impl
+│   │   │   ├── OobCodeGenerator.cs        # Random hashed single-use SMS/email codes
+│   │   │   └── OobCodeOptions.cs          # Digits / TTL / attempt-limit configuration
+│   │   ├── Steam/
+│   │   │   └── SteamGuardGenerator.cs     # Steam Guard 5-char TOTP variant
+│   │   ├── Sync/
+│   │   │   └── ClockSync.cs               # NTP drift measurement + correction
+│   │   ├── Totp/
+│   │   │   ├── TotpGenerator.cs           # RFC 6238 TOTP generator + validator
+│   │   │   ├── TotpOptions.cs             # TOTP configuration + presets
+│   │   │   └── TotpOptionsBuilder.cs      # Fluent options builder
+│   │   ├── Uri/
+│   │   │   ├── OtpUri.cs                  # otpauth:// builder, parser
+│   │   │   └── OtpQrCode.cs               # Local PNG / SVG / data-URI QR rendering
+│   │   ├── GlobalUsings.cs
+│   │   ├── OtpManager.cs                  # High-level enrollment + validation facade
+│   │   └── OtpSharper.csproj
+│   ├── OtpSharper.AspNetCore.Identity/
+│   │   ├── IdentityBuilderExtensions.cs   # AddOtpSharperTwoFactorTokenProvider<TUser>
+│   │   ├── OtpSharperTotpOptions.cs       # Algorithm/digits/replay-tracker configuration
+│   │   ├── OtpSharperTotpTokenProvider.cs # IUserTwoFactorTokenProvider<TUser> implementation
+│   │   └── OtpSharper.AspNetCore.Identity.csproj
+│   └── OtpSharper.Redis/
+│       ├── RedisOobCodeStore.cs           # IOobCodeStore backed by Redis hashes + native TTL
+│       ├── ServiceCollectionExtensions.cs # AddRedisOobCodeStore
+│       └── OtpSharper.Redis.csproj
 ├── tests/
-│   └── OtpSharper.Tests/
-│       ├── AbstractionTests.cs            # Backoff policy tests
-│       ├── Base32AndUriTests.cs           # Base32 codec + URI round-trip tests
-│       ├── HotpTests.cs                   # RFC 4226 test vectors
-│       ├── SteamGuardTests.cs             # Steam Guard output tests
-│       ├── TotpTests.cs                   # RFC 6238 test vectors + window tests
-│       └── OtpSharper.Tests.csproj
+│   ├── OtpSharper.Tests/
+│   │   ├── AbstractionTests.cs            # Backoff policy, used-code store tests
+│   │   ├── Base32AndUriTests.cs           # Base32 codec + URI round-trip tests
+│   │   ├── HotpTests.cs                   # RFC 4226 test vectors
+│   │   ├── OtpQrCodeTests.cs              # Local PNG/SVG/data-URI QR rendering tests
+│   │   ├── OutOfBandTests.cs              # OOB code generator + in-memory store tests
+│   │   ├── SteamGuardTests.cs             # Steam Guard output tests
+│   │   ├── TotpTests.cs                   # RFC 6238 test vectors + window tests
+│   │   └── OtpSharper.Tests.csproj
+│   └── OtpSharper.Redis.Tests/
+│       ├── RedisFixture.cs                # Shared connection + availability check
+│       ├── RedisOobCodeStoreTests.cs      # Integration tests against a real Redis instance
+│       ├── RedisHotpCounterStoreTests.cs  # Including a concurrent-advance race test
+│       ├── RedisUsedCodeStoreTests.cs     # Including a concurrent-first-use race test
+│       └── OtpSharper.Redis.Tests.csproj
 ├── OtpSharper.Benchmark/
 │   ├── AlgorithmBenchmarks.cs             # Per-algorithm TOTP throughput
 │   ├── Base32Benchmarks.cs                # Base32 encode/decode at various key sizes
@@ -464,6 +607,21 @@ Test coverage includes:
 - **otpauth:// URI** — parse, build, and round-trip for TOTP and HOTP URIs
 - **Steam Guard** — expected output for known inputs
 - **Backoff policy** — lockout triggering, expiry, reset on success, concurrent access
+- **Used-code / replay tracking** — first-use vs. replay, via the `IUsedCodeStore` interface
+- **Out-of-band codes** — generation, validation, expiry, attempt-limit lockout, one-time use
+- **Local QR rendering** — PNG signature validity, SVG markup, data-URI round-trip
+
+Redis-backed stores (`OtpSharper.Redis`) have their own integration test project, `tests/OtpSharper.Redis.Tests`, run separately since they need a real Redis instance:
+
+```shell
+docker run --rm -p 6379:6379 redis   # or set OTPSHARPER_TEST_REDIS to point elsewhere
+cd tests/OtpSharper.Redis.Tests
+dotnet test
+```
+
+Tests in that project no-op (rather than fail) if no Redis is reachable, so `dotnet test` on the whole solution still passes without one — see `RedisFixture` for the connectivity check. They cover round-tripping each store plus the concurrency guarantees that motivate using Redis in the first place: `RedisHotpCounterStoreTests.ConcurrentAdvances_NeverRegress` and `RedisUsedCodeStoreTests.ConcurrentFirstUse_OnlyOneWinner` both fire many simultaneous calls at the same key and assert the atomic Lua-script / `SET NX EX` behaviour holds up.
+
+> **Not yet covered:** `OtpSharper.AspNetCore.Identity`'s `OtpSharperTotpTokenProvider` has no tests yet — it needs a `UserManager<TUser>` test harness (a fake `IUserStore`/`IUserAuthenticatorKeyStore`, or `Microsoft.AspNetCore.Identity.EntityFrameworkCore` with an in-memory provider) that's more setup than the rest of this session's scope covered. Treat that package as the one part of this PR still worth reviewing carefully before merging.
 
 ---
 

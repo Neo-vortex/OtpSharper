@@ -3,6 +3,31 @@ using System.Collections.Concurrent;
 namespace OtpSharper.Abstractions;
 
 /// <summary>
+/// Abstraction for replay-attack tracking, so distributed backings (e.g. Redis) can be
+/// swapped in for <see cref="UsedCodeTracker"/>'s in-memory, per-process default.
+/// </summary>
+/// <remarks>
+/// <see cref="UsedCodeTracker"/> implements this interface, so any code written against
+/// <see cref="IUsedCodeStore"/> works unchanged with either the in-memory default or a
+/// distributed implementation such as <c>RedisUsedCodeStore</c> (in the <c>OtpSharper.Redis</c>
+/// package).
+/// </remarks>
+public interface IUsedCodeStore
+{
+    /// <summary>
+    /// Checks whether a (keyId, counter) pair has already been used, and marks it used if not.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the code was freshly marked (first use) — proceed with login.
+    /// <c>false</c> if this counter was already seen — reject as replay.
+    /// </returns>
+    ValueTask<bool> TryMarkUsedAsync(string keyId, long counter, CancellationToken cancellationToken = default);
+
+    /// <summary>Checks whether a (keyId, counter) pair has already been used, without marking it.</summary>
+    ValueTask<bool> IsUsedAsync(string keyId, long counter, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Tracks used OTP codes to prevent replay attacks within the validation window.
 /// </summary>
 /// <remarks>
@@ -15,10 +40,12 @@ namespace OtpSharper.Abstractions;
 /// <para>
 /// Thread-safe. Entries expire automatically after <c>maxAge</c>
 /// (recommended: set to your full validation window duration).
-/// For multi-server deployments, use a distributed cache implementation.
+/// For multi-server deployments, use <c>RedisUsedCodeStore</c> from the
+/// <c>OtpSharper.Redis</c> package (or another <see cref="IUsedCodeStore"/> implementation)
+/// instead — this class's state is per-process and not shared across servers.
 /// </para>
 /// </remarks>
-public sealed class UsedCodeTracker
+public sealed class UsedCodeTracker : IUsedCodeStore
 {
     private sealed record UsedEntry(DateTimeOffset UsedAt);
     private readonly ConcurrentDictionary<string, UsedEntry> _used = new();
@@ -71,6 +98,16 @@ public sealed class UsedCodeTracker
 
     /// <summary>Number of currently tracked entries.</summary>
     public int Count => _used.Count;
+
+    // ── IUsedCodeStore ────────────────────────────────────────────────────────
+
+    /// <inheritdoc />
+    ValueTask<bool> IUsedCodeStore.TryMarkUsedAsync(string keyId, long counter, CancellationToken cancellationToken)
+        => ValueTask.FromResult(TryMarkUsed(keyId, counter));
+
+    /// <inheritdoc />
+    ValueTask<bool> IUsedCodeStore.IsUsedAsync(string keyId, long counter, CancellationToken cancellationToken)
+        => ValueTask.FromResult(IsUsed(keyId, counter));
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

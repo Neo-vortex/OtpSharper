@@ -106,7 +106,21 @@ public sealed class OtpManager
 
     /// <summary>Returns a Google Charts QR code URL for displaying a setup QR code.</summary>
     /// <param name="size">Image size in pixels.</param>
+    [Obsolete("The Google Charts Image API was shut down in 2019; this URL no longer renders an image. " +
+        "Use GetQrCodePng, GetQrCodeSvg, or GetQrCodeDataUri instead.")]
     public string GetQrCodeUrl(int size = 300) => _uri.ToQrCodeImageUrl(size);
+
+    /// <summary>Renders a setup QR code locally and returns raw PNG bytes.</summary>
+    /// <param name="pixelsPerModule">Size of each QR module in pixels. Default: 10.</param>
+    public byte[] GetQrCodePng(int pixelsPerModule = 10) => _uri.ToQrCodePng(pixelsPerModule);
+
+    /// <summary>Renders a setup QR code locally and returns SVG markup.</summary>
+    /// <param name="pixelsPerModule">Size of each QR module in pixels. Default: 10.</param>
+    public string GetQrCodeSvg(int pixelsPerModule = 10) => _uri.ToQrCodeSvg(pixelsPerModule);
+
+    /// <summary>Renders a setup QR code locally and returns a <c>data:image/png;base64,...</c> URI.</summary>
+    /// <param name="pixelsPerModule">Size of each QR module in pixels. Default: 10.</param>
+    public string GetQrCodeDataUri(int pixelsPerModule = 10) => _uri.ToQrCodeDataUri(pixelsPerModule);
 
     // ── Time helpers ──────────────────────────────────────────────────────────
 

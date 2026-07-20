@@ -143,8 +143,40 @@ public class UsedCodeTrackerTests
     }
 }
 
-public class SecretGeneratorTests
+public class UsedCodeStoreInterfaceTests
 {
+    // UsedCodeTracker implements IUsedCodeStore explicitly (see Abstractions/UsedCodeTracker.cs) so
+    // that RedisUsedCodeStore (OtpSharper.Redis) is a drop-in substitute for distributed deployments.
+    // These tests exercise it through the interface, not the concrete sync API covered above.
+
+    [Fact]
+    public async Task TryMarkUsedAsync_FirstUse_ReturnsTrue()
+    {
+        IUsedCodeStore store = new UsedCodeTracker();
+        (await store.TryMarkUsedAsync("user1", 100)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task TryMarkUsedAsync_Replay_ReturnsFalse()
+    {
+        IUsedCodeStore store = new UsedCodeTracker();
+        await store.TryMarkUsedAsync("user1", 100);
+
+        (await store.TryMarkUsedAsync("user1", 100)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsUsedAsync_ReflectsMarkedState()
+    {
+        IUsedCodeStore store = new UsedCodeTracker();
+
+        (await store.IsUsedAsync("user1", 55)).Should().BeFalse();
+        await store.TryMarkUsedAsync("user1", 55);
+        (await store.IsUsedAsync("user1", 55)).Should().BeTrue();
+    }
+
+
+
     [Theory]
     [InlineData(OtpSharper.Algorithms.OtpAlgorithm.HmacSha1,   20)]
     [InlineData(OtpSharper.Algorithms.OtpAlgorithm.HmacSha256, 32)]
