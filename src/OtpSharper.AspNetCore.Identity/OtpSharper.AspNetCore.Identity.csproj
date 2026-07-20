@@ -8,7 +8,7 @@
 
     <!-- Package metadata -->
     <PackageId>OtpSharper.AspNetCore.Identity</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.4</Version>
     <Authors>OtpSharp Contributors</Authors>
     <Description>ASP.NET Core Identity two-factor token provider backed by OtpSharper — drop-in
       replacement for Identity's built-in authenticator provider with configurable algorithm,
