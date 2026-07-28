@@ -160,6 +160,7 @@ public class OtpUriTests
     }
 
     [Fact]
+    [Obsolete("Obsolete")]
     public void QrCodeUrl_ContainsEncodedUri()
     {
         using var secret = OtpSecret.FromBase32("JBSWY3DPEHPK3PXP");

@@ -11,7 +11,9 @@ namespace OtpSharper.Redis;
 /// Each (keyId, counter) pair maps to a single Redis key, marked used via <c>SET ... NX EX</c> —
 /// an atomic "set only if it doesn't already exist, with an expiry" in one round trip, so two
 /// concurrent servers racing to mark the same code used can't both observe "first use". The
-/// expiry (<paramref name="maxAge">maxAge</paramref> in the constructor) frees the key once the
+/// expiry (<paramref>maxAge
+///     <name>maxAge</name>
+/// </paramref> in the constructor) frees the key once the
 /// code could no longer be valid anyway, mirroring <see cref="UsedCodeTracker"/>'s own cleanup.
 /// </remarks>
 public sealed class RedisUsedCodeStore : IUsedCodeStore
