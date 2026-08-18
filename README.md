@@ -17,7 +17,7 @@ dotnet add package OtpSharper.Redis                 # Redis-backed distributed s
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-purple)](https://dotnet.microsoft.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![NuGet](https://img.shields.io/badge/NuGet-1.0.0-green)](https://www.nuget.org/packages/OtpSharperer)
+[![NuGet](https://img.shields.io/badge/NuGet-1.0.4-green)](https://www.nuget.org/packages/OtpSharper)
 
 ---
 
