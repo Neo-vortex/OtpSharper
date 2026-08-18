@@ -3,7 +3,7 @@ using OtpNet;
 using OtpSharper.Core;
 using OtpSharper.Totp;
 
-namespace OtpSharp.Benchmarks;
+namespace OtpSharper.Benchmark;
 
 /// <summary>
 /// Benchmarks the cost of setting up OTP objects from scratch.

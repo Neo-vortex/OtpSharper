@@ -99,6 +99,41 @@ public class HotpRfc4226Tests
     }
 
     [Fact]
+    public async Task ValidateAsync_RejectsCounter_OneStepBeyondLookAheadWindow()
+    {
+        using var secret = new OtpSecret(SecretBytes);
+        var store = new InMemoryHotpCounterStore();
+        var options = new HotpOptions { LookAheadWindow = 5 };
+        var hotp = new HotpGenerator(secret, options);
+
+        // Counter is at 0; a code for counter 6 is one step past the look-ahead window of 5.
+        string codeAtOffset6 = hotp.GenerateAt(6).Code;
+
+        var result = await hotp.ValidateAsync(codeAtOffset6, "user1", store);
+
+        result.IsValid.Should().BeFalse();
+        (await store.GetCounterAsync("user1")).Should().Be(0, "no match means the counter must not advance");
+    }
+
+    [Fact]
+    public async Task ValidateAsync_AcceptsCounter_AtExactLookAheadBoundary()
+    {
+        using var secret = new OtpSecret(SecretBytes);
+        var store = new InMemoryHotpCounterStore();
+        var options = new HotpOptions { LookAheadWindow = 5 };
+        var hotp = new HotpGenerator(secret, options);
+
+        // Counter is at 0; a code for counter 5 is exactly at the edge of the look-ahead window.
+        string codeAtOffset5 = hotp.GenerateAt(5).Code;
+
+        var result = await hotp.ValidateAsync(codeAtOffset5, "user1", store);
+
+        result.IsValid.Should().BeTrue();
+        result.WindowOffset.Should().Be(5);
+        (await store.GetCounterAsync("user1")).Should().Be(6);
+    }
+
+    [Fact]
     public async Task ValidateAsync_RejectsReplayedCode()
     {
         using var secret = new OtpSecret(SecretBytes);

@@ -97,6 +97,22 @@ public class OobCodeGeneratorTests
     }
 
     [Fact]
+    public async Task ValidateAsync_StillAllowsCorrectCode_BelowMaxAttemptsThreshold()
+    {
+        var generator = new OobCodeGenerator(
+            new InMemoryOobCodeStore(),
+            new OobCodeOptions { MaxAttempts = 3 });
+
+        string code = await generator.GenerateAsync("user1");
+
+        await generator.ValidateAsync("user1", "000000"); // attempt 1, wrong
+        await generator.ValidateAsync("user1", "000001"); // attempt 2, wrong — still below the threshold of 3
+
+        var result = await generator.ValidateAsync("user1", code);
+        result.IsValid.Should().BeTrue("only 2 of the allowed 3 attempts were consumed by wrong guesses");
+    }
+
+    [Fact]
     public async Task GenerateAsync_NewRequestOverwritesPreviousPendingCode()
     {
         var generator = new OobCodeGenerator(new InMemoryOobCodeStore());

@@ -6,6 +6,7 @@ using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 using BenchmarkDotNet.Validators;
 using OtpSharp.Benchmarks;
+using OtpSharper.Benchmark;
 
 Console.WriteLine(Environment.GetEnvironmentVariable("PATH"));
 Console.WriteLine(Environment.GetEnvironmentVariable("DOTNET_ROOT"));

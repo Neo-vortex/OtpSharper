@@ -119,7 +119,6 @@ public class TotpRfc6238Tests
         var totp = new TotpGenerator(secret);
         // Generate code and increment last digit
         string code = totp.Generate().Code;
-        string wrong = ((int.Parse(code) + 1) % 1_000_000).ToString("D6");
 
         // Edge case: might accidentally match — just test structure
         var result = totp.Validate("000000");
@@ -169,6 +168,122 @@ public class TotpRfc6238Tests
         // Only accept if it accidentally matches current (astronomically unlikely)
         if (!result.IsValid)
             result.FailureReason.Should().Contain("window");
+    }
+
+    [Theory]
+    [InlineData(30, 30)]
+    [InlineData(30, -30)]
+    [InlineData(5, 5)]
+    [InlineData(5, -5)]
+    public void Validate_AcceptsCode_AtExactWindowBoundary(int windowSteps, int offset)
+    {
+        using var secret = new OtpSecret("12345678901234567890"u8.ToArray());
+        var fixedTime = DateTimeOffset.FromUnixTimeSeconds(1111111111);
+        var options = new TotpOptions
+        {
+            TimeProvider = new FixedTimeProvider(fixedTime),
+            ValidationWindowSteps = windowSteps,
+        };
+        var totp = new TotpGenerator(secret, options);
+
+        long targetCounter = UnixTime.GetCounter(fixedTime, 30) + offset;
+        string code = totp.GenerateForCounter(targetCounter).Code;
+
+        var result = totp.Validate(code);
+
+        result.IsValid.Should().BeTrue(
+            $"a code exactly {offset} steps away should be accepted when the window is {windowSteps}");
+        result.WindowOffset.Should().Be(offset);
+    }
+
+    [Theory]
+    [InlineData(30, 31)]
+    [InlineData(30, -31)]
+    [InlineData(5, 6)]
+    [InlineData(5, -6)]
+    public void Validate_RejectsCode_OneStepOutsideWindowBoundary(int windowSteps, int offset)
+    {
+        using var secret = new OtpSecret("12345678901234567890"u8.ToArray());
+        var fixedTime = DateTimeOffset.FromUnixTimeSeconds(1111111111);
+        var options = new TotpOptions
+        {
+            TimeProvider = new FixedTimeProvider(fixedTime),
+            ValidationWindowSteps = windowSteps,
+        };
+        var totp = new TotpGenerator(secret, options);
+
+        long targetCounter = UnixTime.GetCounter(fixedTime, 30) + offset;
+        string code = totp.GenerateForCounter(targetCounter).Code;
+
+        var result = totp.Validate(code);
+
+        result.IsValid.Should().BeFalse(
+            $"a code {offset} steps away is just outside a window of {windowSteps} and must not be accepted");
+    }
+
+    [Fact]
+    public void Validate_ExtraLookBehind_AcceptsOlderCodeBeyondSymmetricWindow()
+    {
+        using var secret = new OtpSecret("12345678901234567890"u8.ToArray());
+        var fixedTime = DateTimeOffset.FromUnixTimeSeconds(1111111111);
+        var options = new TotpOptions
+        {
+            TimeProvider = new FixedTimeProvider(fixedTime),
+            ValidationWindowSteps = 1,
+            ExtraLookBehindSteps = 4,
+        };
+        var totp = new TotpGenerator(secret, options);
+
+        // 5 steps behind: outside the plain ±1 window, but inside window(1) + extra behind(4) = 5.
+        long counter = UnixTime.GetCounter(fixedTime, 30) - 5;
+        string code = totp.GenerateForCounter(counter).Code;
+
+        var result = totp.Validate(code);
+
+        result.IsValid.Should().BeTrue();
+        result.WindowOffset.Should().Be(-5);
+    }
+
+    [Fact]
+    public void Validate_ExtraLookBehind_DoesNotAlsoExtendLookAheadSide()
+    {
+        using var secret = new OtpSecret("12345678901234567890"u8.ToArray());
+        var fixedTime = DateTimeOffset.FromUnixTimeSeconds(1111111111);
+        var options = new TotpOptions
+        {
+            TimeProvider = new FixedTimeProvider(fixedTime),
+            ValidationWindowSteps = 1,
+            ExtraLookBehindSteps = 4,
+        };
+        var totp = new TotpGenerator(secret, options);
+
+        // Ahead side was never extended, so +5 must still be rejected even though -5 (tested above) is accepted.
+        long counter = UnixTime.GetCounter(fixedTime, 30) + 5;
+        string code = totp.GenerateForCounter(counter).Code;
+
+        totp.Validate(code).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Validate_ExtraLookAhead_AcceptsNewerCodeBeyondSymmetricWindow()
+    {
+        using var secret = new OtpSecret("12345678901234567890"u8.ToArray());
+        var fixedTime = DateTimeOffset.FromUnixTimeSeconds(1111111111);
+        var options = new TotpOptions
+        {
+            TimeProvider = new FixedTimeProvider(fixedTime),
+            ValidationWindowSteps = 1,
+            ExtraLookAheadSteps = 4,
+        };
+        var totp = new TotpGenerator(secret, options);
+
+        long counter = UnixTime.GetCounter(fixedTime, 30) + 5;
+        string code = totp.GenerateForCounter(counter).Code;
+
+        var result = totp.Validate(code);
+
+        result.IsValid.Should().BeTrue();
+        result.WindowOffset.Should().Be(5);
     }
 
     [Fact]
